@@ -1,3 +1,4 @@
+use super::bambu::BambuDevice;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -16,6 +17,7 @@ pub struct BambuInfo {
 pub struct Config {
     pub is_first_run: bool,
     pub bambu_info: BambuInfo,
+    pub bambu_devices: Vec<BambuDevice>,
 }
 
 impl Default for Config {
@@ -29,6 +31,7 @@ impl Default for Config {
                 jwt_last_refresh: 0,
                 jwt_expires_at: 0,
             },
+            bambu_devices: Vec::new(),
         }
     }
 }

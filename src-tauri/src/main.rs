@@ -4,7 +4,7 @@
 mod commands;
 mod constants;
 mod handlers;
-use commands::bambu::login_to_bambu;
+use commands::bambu::{discover_devices, fetch_devices, get_jwt, login_to_bambu, set_jwt};
 use commands::config::{get_config, init_config, save_config};
 use commands::util::quit;
 
@@ -15,7 +15,11 @@ fn main() {
             get_config,
             save_config,
             quit,
-            login_to_bambu
+            login_to_bambu,
+            set_jwt,
+            get_jwt,
+            fetch_devices,
+            discover_devices
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
