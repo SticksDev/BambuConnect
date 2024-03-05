@@ -9,6 +9,8 @@ use commands::config::{get_config, init_config, save_config};
 use commands::util::quit;
 
 fn main() {
+    log::set_max_level(log::LevelFilter::Debug);
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             init_config,

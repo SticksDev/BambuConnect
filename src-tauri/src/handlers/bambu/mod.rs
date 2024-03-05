@@ -1,11 +1,6 @@
-use std::{borrow::Borrow, collections::HashSet, sync::Arc};
-
 // Imports
 use crate::constants;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
-use paho_mqtt::connect_options;
-use reqwest::header::ValueIter;
-use serde::de;
 use serde_json::{json, Number};
 use tokio::sync::Mutex;
 
@@ -278,16 +273,15 @@ impl BambuClient {
             let mut builder = paho_mqtt::ConnectOptionsBuilder::new();
             builder
                 .keep_alive_interval(std::time::Duration::from_secs(30))
-                .user_name(jwt_decoded.claims.username)
+                .user_name(format!("u_{}", jwt_decoded.claims.preferred_username))
                 .password(token)
                 .ssl_options(paho_mqtt::SslOptions::new());
             builder.finalize()
         };
 
         println!(
-            "[BambuClient::get_device_ips] Connecting to MQTT broker at {} with options: {:?}",
+            "[BambuClient::get_device_ips] Connecting to MQTT broker at {}",
             constants::BAMBU_MQTT_URL,
-            connect_options
         );
 
         // Connect to the MQTT broker
@@ -326,6 +320,9 @@ impl BambuClient {
             );
 
             mqtt_client.subscribe(topic, 1).wait().map_err(|e| {
+                // Print the error stack
+                eprintln!("{}", e);
+
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("Failed to subscribe to topic {}: {}", topic, e),
