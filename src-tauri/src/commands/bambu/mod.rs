@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 
 use crate::handlers::bambu::{BambuClient, BambuDevice};
 use lazy_static::lazy_static;
+use serde_json::json;
 
 lazy_static! {
     static ref BAMBU_CLIENT: BambuClient = BambuClient::new();
@@ -78,8 +79,11 @@ pub async fn discover_devices(devices: Vec<BambuDevice>) -> Result<String, Strin
 
     match devices {
         Ok(devices) => {
-            // Serialize the response to JSON
-            let serialized_devices = serde_json::to_string(&devices).map_err(|e| e.to_string())?;
+            let json = json!({
+                "devices": devices
+            });
+
+            let serialized_devices = serde_json::to_string(&json).map_err(|e| e.to_string())?;
             Ok(serialized_devices)
         }
         Err(e) => Err(e.to_string()),

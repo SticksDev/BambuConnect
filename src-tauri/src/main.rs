@@ -8,9 +8,8 @@ use commands::bambu::{discover_devices, fetch_devices, get_jwt, login_to_bambu, 
 use commands::config::{get_config, init_config, save_config};
 use commands::util::quit;
 
-fn main() {
-    log::set_max_level(log::LevelFilter::Debug);
-
+#[tokio::main]
+async fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             init_config,

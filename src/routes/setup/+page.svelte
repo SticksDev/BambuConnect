@@ -16,7 +16,11 @@
 	import { dialog, clipboard } from '@tauri-apps/api';
 	import { awaiter } from '$lib/utils';
 	import { onMount } from 'svelte';
-	import type { BambuDevicesResponse, BambuLoginResponse } from '$lib/types';
+	import type {
+		BambuDevicesResponse,
+		BambuDiscoveryResponse,
+		BambuLoginResponse
+	} from '$lib/types';
 
 	onMount(async () => {
 		const [config, configError] = await awaiter(invoke('get_config'));
@@ -75,11 +79,11 @@
 		console.log(`[setup] got devices from rust. Response: ${JSON.stringify(devices, null, 2)}`);
 
 		status = `Found ${devices.devices.length} devices. Discovering... (This may take a while)`;
-		const [discovery, discoveryError] = await awaiter(
-			invoke('discover_devices', { devices: devices.devices })
+		const [discoveryRaw, discoveryError] = await awaiter(
+			invoke('discover_devices', { devices: devices.devices }) as Promise<string>
 		);
 
-		if (discoveryError || !discovery || discovery === null) {
+		if (discoveryError || !discoveryRaw || discoveryRaw === null) {
 			status = 'Failed to discover devices';
 			await dialog.message(
 				`Something went wrong while discovering devices. We've copied the error to your clipboard. Please report this issue on GitHub.\n\nError: ${discoveryError ?? 'Discovery response was null'}\n\n`,
@@ -91,6 +95,31 @@
 		}
 
 		status = 'Discovery complete. Saving devices...';
+		const discovery = JSON.parse(discoveryRaw) as BambuDiscoveryResponse;
+
+		// Construct the save object
+		const saveObject = {
+			is_first_run: false,
+			bambu_info: {
+				jwt: loginResponse.token,
+				refresh_token: loginResponse.refresh_token
+			},
+			bambu_devices: discovery.devices
+		};
+
+		const [_unused, saveError] = await awaiter(invoke('save_config', { config: saveObject }));
+
+		if (!saveError) {
+			step = 3;
+		} else {
+			status = 'Failed to save devices';
+			await dialog.message(
+				`Something went wrong while saving devices. We've copied the error to your clipboard. Please report this issue on GitHub.\n\nError: ${saveError}\n\n`,
+				{ title: 'BambuConnect | Save Devices Error', type: 'error' }
+			);
+
+			step = 1;
+		}
 	}
 
 	function validateLoginForm() {
@@ -265,6 +294,34 @@
 				<p class="text-gray-200 break-words max-w-[30em]">
 					{status}
 				</p>
+			{:else if step === 3}
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke-width="1.5"
+					stroke="currentColor"
+					class="w-12 h-12 text-green-500 dark:text-green-400"
+				>
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+					/>
+				</svg>
+				<h1 class="text-2xl font-bold mt-2 text-white">Setup Complete!</h1>
+				<p class="text-gray-200 break-words max-w-[30em]">
+					You're all set! BambuConnect is now connected to your Bambu account and is ready to use.
+				</p>
+
+				<button
+					on:click={() => {
+						window.location.href = '/home';
+					}}
+					class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-all duration-200 ease-in-out"
+				>
+					Finish
+				</button>
 			{/if}
 		{/if}
 	</div>

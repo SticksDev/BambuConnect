@@ -41,7 +41,8 @@
 			// Navigate to /setup
 			window.location.href = '/setup';
 		} else {
-			// TODO...
+			const [_, setJwtError] = await awaiter(invoke('set_jwt', { jwt: config.bambu_info.jwt }));
+			window.location.href = '/home';
 		}
 	});
 </script>

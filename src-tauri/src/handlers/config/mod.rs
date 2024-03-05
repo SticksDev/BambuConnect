@@ -8,9 +8,6 @@ use std::path::{Path, PathBuf};
 pub struct BambuInfo {
     pub jwt: String,
     pub refresh_token: String,
-    pub refresh_token_expires_at: i64,
-    pub jwt_last_refresh: i64,
-    pub jwt_expires_at: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,9 +24,6 @@ impl Default for Config {
             bambu_info: BambuInfo {
                 jwt: String::new(),
                 refresh_token: String::new(),
-                refresh_token_expires_at: 0,
-                jwt_last_refresh: 0,
-                jwt_expires_at: 0,
             },
             bambu_devices: Vec::new(),
         }

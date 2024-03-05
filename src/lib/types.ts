@@ -1,6 +1,7 @@
 export type Config = {
 	is_first_run: boolean;
 	bambu_info: BambuInfo;
+	bambu_devices: Device[];
 };
 
 export type BambuInfo = {
@@ -23,10 +24,15 @@ export type BambuDevicesResponse = {
 	devices: Device[];
 };
 
+export type BambuDiscoveryResponse = {
+	devices: Device[];
+}
+
 export type Device = {
 	dev_id: string;
 	name: string;
 	online: boolean;
+	ip?: string;
 	print_status: string;
 	dev_model_name: string;
 	dev_product_name: string;

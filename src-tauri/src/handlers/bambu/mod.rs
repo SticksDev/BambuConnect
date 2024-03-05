@@ -1,7 +1,9 @@
 // Imports
+use super::ssdp::SsdpMessage;
 use crate::constants;
-use jsonwebtoken::{Algorithm, DecodingKey, Validation};
+use crate::handlers::ssdp::SsdpListener;
 use serde_json::{json, Number};
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 pub struct BambuClient {
@@ -57,11 +59,12 @@ impl std::fmt::Display for BambuDeviceResponse {
     }
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
 pub struct BambuDevice {
     dev_id: String,
     name: String,
     online: bool,
+    ip: Option<String>,
     print_status: String,
     dev_model_name: String,
     dev_product_name: String,
@@ -235,130 +238,67 @@ impl BambuClient {
     pub async fn get_device_ips(
         &self,
         devices: Vec<BambuDevice>,
-    ) -> Result<Vec<String>, std::io::Error> {
-        // Ensure we have a token to use
-        let token =
-            match self.get_jwt().await {
-                Some(token) => token,
-                None => return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Expected a token to be set before calling get_device_ips, but none was found.",
-                )),
-            };
-
-        // Because we don't have the private key, we need to "skip" the signature validation
-        // Though this is not recommended, it is the only way to decode the token without the private key.
-        let key = DecodingKey::from_secret(&[]);
-        let mut validation = Validation::new(Algorithm::HS256);
-        validation.insecure_disable_signature_validation();
-        validation.set_audience(&[constants::BAMBU_AUDIENCE]);
-
-        let jwt_decoded =
-            jsonwebtoken::decode::<BambuUserJwt>(&token, &key, &validation).map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to decode Bambu JWT: {}", e),
-                )
-            })?;
-
-        // Create a new MQTT client
-        let mqtt_client = paho_mqtt::AsyncClient::new(constants::BAMBU_MQTT_URL).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create MQTT client: {}", e),
-            )
-        })?;
-
-        let connect_options = {
-            let mut builder = paho_mqtt::ConnectOptionsBuilder::new();
-            builder
-                .keep_alive_interval(std::time::Duration::from_secs(30))
-                .user_name(format!("u_{}", jwt_decoded.claims.preferred_username))
-                .password(token)
-                .ssl_options(paho_mqtt::SslOptions::new());
-            builder.finalize()
-        };
-
+    ) -> Result<Vec<BambuDevice>, std::io::Error> {
         println!(
-            "[BambuClient::get_device_ips] Connecting to MQTT broker at {}",
-            constants::BAMBU_MQTT_URL,
+            "[BambuClient::get_device_ips] Starting discovery for {} devices using SSDP ...",
+            devices.len()
         );
 
-        // Connect to the MQTT broker
-        mqtt_client.connect(connect_options).await.map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to connect to MQTT broker: {}", e),
-            )
-        })?;
+        let ssdp_listeners = vec![SsdpListener::new(1990), SsdpListener::new(2021)];
+        let mut ssdp_messages: Vec<SsdpMessage> = vec![];
 
-        mqtt_client.set_message_callback(move |_, msg| {
-            if let Some(msg) = msg {
-                println!(
-                    "[BambuClient::get_device_ips] Received message on topic {}: {}",
-                    msg.topic(),
-                    msg.payload_str()
-                );
-            }
-        });
+        for listener in ssdp_listeners {
+            println!("[BambuClient::get_device_ips] Running SSDP Discovery ...");
 
-        println!("[BambuClient::get_device_ips] Connected to MQTT broker");
-
-        // For each device, subscribe to the topic
-        for device in devices {
-            let topic_string = format!("device/{}/status", device.dev_id);
-            let topic = topic_string.as_str();
-
-            println!(
-                "[BambuClient::get_device_ips] Starting discovery for device {} with topic {}",
-                device.dev_id, topic
-            );
-
-            println!(
-                "[BambuClient::get_device_ips] Subscribing to topic {}...",
-                topic
-            );
-
-            mqtt_client.subscribe(topic, 1).wait().map_err(|e| {
-                // Print the error stack
-                eprintln!("{}", e);
-
+            let messages = listener.listen(Duration::from_secs(5)).await.map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!("Failed to subscribe to topic {}: {}", topic, e),
+                    format!(
+                        "[BambuClient::get_device_ips] Failed to listen for SSDP messages: {}",
+                        e
+                    ),
                 )
             })?;
 
-            // Publish the hello message to the topic to trigger the device to send its IP
-            let msg =
-                paho_mqtt::Message::new(topic, constants::BAMBU_MQTT_INIT_PAYLOAD.to_string(), 1);
-
-            mqtt_client.publish(msg).await.map_err(|e| {
-                // painc here
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to publish to topic {}: {}", topic, e),
-                )
-            })?;
-
+            ssdp_messages.extend(messages);
             println!(
-                "[BambuClient::get_device_ips] Published to topic {}. Moving on to the next device...",
-                topic
+                "[BambuClient::get_device_ips] Found {} SSDP messages so far ...",
+                ssdp_messages.len(),
             );
         }
 
-        // Allow the client to receive messages for 5 seconds
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        // de-dupe the messages by location
+        let mut unique_messages: Vec<SsdpMessage> = vec![];
+        for message in ssdp_messages {
+            if !unique_messages
+                .iter()
+                .any(|m| m.location == message.location)
+            {
+                unique_messages.push(message);
+            }
+        }
 
-        // Disconnect from the MQTT broker
-        mqtt_client.disconnect(None).await.map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to disconnect from MQTT broker: {}", e),
-            )
-        })?;
+        if unique_messages.len() == 0 {
+            println!("[BambuClient::get_device_ips] No unique messages found. Exiting ...");
+            return Ok(vec![]);
+        }
 
-        println!("[BambuClient::get_device_ips] Disconnected from MQTT broker. Done.");
-        Ok(vec![])
+        println!(
+            "[BambuClient::get_device_ips] Finished SSDP discovery, found {} unique messages. Enriching...",
+            unique_messages.len()
+        );
+
+        let mut device_ips: Vec<BambuDevice> = vec![];
+
+        for mut device in devices {
+            let related_message = unique_messages.iter().find(|m| m.usn == device.dev_id);
+
+            if let Some(message) = related_message {
+                device.ip = Some(message.location.clone());
+                device_ips.push(device.clone());
+            }
+        }
+
+        Ok(device_ips)
     }
 }
