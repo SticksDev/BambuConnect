@@ -93,6 +93,10 @@ impl SsdpListener {
     ) -> Result<Vec<SsdpMessage>, Box<dyn std::error::Error>> {
         // Create a UDP socket bound to the specified port
         let socket = UdpSocket::bind(format!("0.0.0.0:{}", self.port))?;
+        socket.set_read_timeout(Some(duration)).map_err(|e| {
+            eprintln!("Error setting read timeout: {}", e);
+            e
+        })?;
 
         // Join the SSDP multicast group
         socket.join_multicast_v4(
@@ -113,15 +117,22 @@ impl SsdpListener {
 
         // Receive messages until the specified duration elapses
         while Instant::now() - start_time < duration {
-            match socket.recv_from(&mut buf[..]) {
+            match socket.recv_from(&mut buf) {
                 Ok((size, _)) => {
-                    // Parse and handle the SSDP NOTIFY message
-                    let message = std::str::from_utf8(&buf[..size])?.to_string();
-                    messages.push(SsdpMessage::from_message(&message)?);
+                    println!("Received message of size {}", size);
+                    let message = std::str::from_utf8(&buf[..size])?;
+                    let ssdp_message = SsdpMessage::from_message(message)?;
+                    messages.push(ssdp_message);
                 }
                 Err(e) => {
-                    eprintln!("Error receiving SSDP message: {}", e);
-                    break; // Exit loop on error
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut
+                    {
+                        println!("No more messages received within the specified duration");
+                        break;
+                    } else {
+                        eprintln!("Error receiving message: {}", e);
+                    }
                 }
             }
         }

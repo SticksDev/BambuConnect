@@ -617,21 +617,35 @@ impl BambuClient {
         for listener in ssdp_listeners {
             println!("[BambuClient::get_device_ips] Running SSDP Discovery ...");
 
-            let messages = listener.listen(Duration::from_secs(5)).await.map_err(|e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!(
-                        "[BambuClient::get_device_ips] Failed to listen for SSDP messages: {}",
-                        e
-                    ),
-                )
-            })?;
-
-            ssdp_messages.extend(messages);
-            println!(
-                "[BambuClient::get_device_ips] Found {} SSDP messages so far ...",
-                ssdp_messages.len(),
+            // Wrap in a timeout to ensure we don't hang forever
+            let messages = tokio::time::timeout(
+                Duration::from_secs(5),
+                listener.listen(Duration::from_secs(5)),
             );
+
+            match messages.await {
+                Ok(Ok(messages)) => {
+                    println!(
+                        "[BambuClient::get_device_ips] Successfully discovered {} SSDP messages.",
+                        messages.len()
+                    );
+                    ssdp_messages.extend(messages);
+                }
+                Ok(Err(e)) => {
+                    println!(
+                        "[BambuClient::get_device_ips] Failed to discover SSDP messages: {}",
+                        e
+                    );
+                }
+                Err(_) => {
+                    println!(
+                        "[BambuClient::get_device_ips] Timed out while discovering SSDP messages."
+                    );
+
+                    // Continue to the next listener
+                    continue;
+                }
+            }
         }
 
         // de-dupe the messages by location
@@ -647,7 +661,10 @@ impl BambuClient {
 
         if unique_messages.len() == 0 {
             println!("[BambuClient::get_device_ips] No unique messages found. Exiting ...");
-            return Ok(vec![]);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "No unique messages found during SSDP discovery. Please ensure your devices are connected to the network and try again.",
+            ));
         }
 
         println!(
