@@ -1,11 +1,12 @@
-use std::borrow::Borrow;
-
-use crate::handlers::bambu::{BambuClient, BambuDevice};
+use crate::handlers::bambu::{BambuClient, BambuDevice, BambuMQTTClient};
 use lazy_static::lazy_static;
 use serde_json::json;
+use std::borrow::Borrow;
+use tokio::sync::Mutex;
 
 lazy_static! {
     static ref BAMBU_CLIENT: BambuClient = BambuClient::new();
+    static ref BAMBU_MQTT_CLIENT: Mutex<BambuMQTTClient> = Mutex::new(BambuMQTTClient::new());
 }
 
 #[tauri::command]
@@ -87,5 +88,87 @@ pub async fn discover_devices(devices: Vec<BambuDevice>) -> Result<String, Strin
             Ok(serialized_devices)
         }
         Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn init_mqtt_worker() -> Result<String, String> {
+    println!("[commands::bambu::init_mqtt_worker] initializing mqtt worker");
+
+    let result: Result<(), ()> = async {
+        let mut client = BAMBU_MQTT_CLIENT.lock().await;
+        client.initialize().await;
+
+        Ok(())
+    }
+    .await;
+
+    match result {
+        Ok(_) => Ok("".to_string()),
+        Err(_) => Err("Failed to initialize mqtt worker".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn watch_device(device: BambuDevice) -> Result<String, String> {
+    println!(
+        "[commands::bambu::watch_device] watching device: {:?}",
+        device.name
+    );
+
+    let result: Result<(), std::io::Error> = async {
+        let mut client = BAMBU_MQTT_CLIENT.lock().await;
+        client.watch_device(device).await
+    }
+    .await;
+
+    match result {
+        Ok(_) => Ok("".to_string()), // Return an empty string on success
+        Err(e) => {
+            println!("[commands::bambu::watch_device] error watching: {:?}", e);
+            Err(e.to_string()) // Return the error as is
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn unwatch_device(device: BambuDevice) -> Result<String, String> {
+    println!(
+        "[commands::bambu::unwatch_device] unwatching device: {:?}",
+        device.name
+    );
+
+    let result: Result<(), std::io::Error> = async {
+        let mut client = BAMBU_MQTT_CLIENT.lock().await;
+        client.unwatch_device(device).await
+    }
+    .await;
+
+    match result {
+        Ok(_) => Ok("".to_string()), // Return an empty string on success
+        Err(e) => {
+            println!(
+                "[commands::bambu::unwatch_device] error unwatching: {:?}",
+                e
+            );
+            Err(e.to_string()) // Return the error as is
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn deinit_mqtt_worker() -> Result<String, String> {
+    println!("[commands::bambu::deinit_mqtt_worker] deinitializing mqtt worker");
+
+    let result: Result<(), ()> = async {
+        let mut client = BAMBU_MQTT_CLIENT.lock().await;
+        client.deinitialize().await;
+        Ok(())
+    }
+    .await;
+
+    match result {
+        Ok(_) => Ok("".to_string()),
+        Err(_) => Err("Failed to deinitialize mqtt worker".to_string()),
     }
 }

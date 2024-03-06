@@ -24,6 +24,7 @@ lazy_static = "1.4.0"
 tokio = { version = "1.36.0", features = ["full"] }
 jsonwebtoken = "9.2.0"
 paho-mqtt = "0.12.3"
+futures = "0.3.30"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.
