@@ -1,4 +1,4 @@
-name: Rust
+name: Build Rust Code
 
 on:
   push:
@@ -17,4 +17,4 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      run: cargo build --verbose
+      run: cd src-tauri && cargo build --verbose
